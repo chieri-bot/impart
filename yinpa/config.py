@@ -15,6 +15,8 @@ class YinpaConfig:
 
     dajiao_add_length = 0.3  # 打胶增加长度
     dajiao_add_chest_size = 0.05
+    dajiao_add_sensitive = 1.5  # 打胶增加敏感度
+    dajiao_max_magnification = 4  # 打胶最大随机倍率
 
     snatch_newnew_length_base = 1.0  # 抢夺基本长度
     snatch_newnew_max_magnification = 4  # 抢夺随机数最大倍率

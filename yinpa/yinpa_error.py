@@ -4,15 +4,22 @@ class YinpaError(Exception):
         self.message = message
         super().__init__(*args)
 
-class YinpaValueError(YinpaError):
-    pass
-
-class YinpaUserError(YinpaError):
     def __str__(self):
         return self.message
 
     def __repr__(self):
         return self.__str__()
+
+class YinpaValueError(YinpaError):
+    def __init__(self, message, *args):
+        super().__init__(message, *args)
+        self.message = f"{self.__class__.__name__}: {message}"
+
+class YinpaUserExistsError(YinpaError):
+    pass
+
+class YinpaUserError(YinpaError):
+    pass
 
 class SexNotFoundError(YinpaError):
     def __init__(self, value):
@@ -30,6 +37,10 @@ class ActionNotFoundError(YinpaError):
     def __init__(self, value):
         super().__init__(f"Action type: {value} not found.")
 
-class UserNotFoundError(YinpaError):
+class UserNotFoundError(YinpaUserError):
     def __init__(self, value):
-        super().__init__(f"User: {value} not found.")
+        super().__init__(f"用户: {value} 还未加入 yinpa." if isinstance(value, int) else value)
+
+class ItemNotFoundError(YinpaError):
+    def __init__(self, value):
+        super().__init__(f"Item: {value} not found.")

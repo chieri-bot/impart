@@ -32,7 +32,10 @@ class YinpaDB:
         return now_hp
 
     def get_user_info(self, userid, raise_notfound_error=True):
-        self.update_hp(userid)
+        try:
+            self.update_hp(userid)
+        except err.UserNotFoundError:
+            pass
         cursor = self.conn.cursor()
         cursor.row_factory = sqlite3.Row
 
@@ -57,19 +60,39 @@ class YinpaDB:
 
         return models.UserInfo(**ret_dict)
 
+    def get_user_info_from_name(self, username, raise_notfound_error=True):
+        cursor = self.conn.cursor()
+        query = cursor.execute("SELECT id FROM users WHERE name=?", [username]).fetchone()
+        cursor.close()
+        if not query:
+            if raise_notfound_error:
+                raise err.UserNotFoundError(username)
+            else:
+                return None
+        return self.get_user_info(query[0], raise_notfound_error=raise_notfound_error)
+
+    def get_random_user(self):
+        cursor = self.conn.cursor()
+        query = cursor.execute("SELECT id FROM users ORDER BY RANDOM() LIMIT 1").fetchone()
+        cursor.close()
+        if not query:
+            raise err.UserNotFoundError("获取随机对象失败")
+        return self.get_user_info(query[0])
+
     def update_user_info(self, data: models.UserInfo):
         data.update_prostitution()
         cursor = self.conn.cursor()
 
         cursor.execute("INSERT OR REPLACE INTO users (id, name, sex, hp, chest_size, length, length2, depth, "
                        "prostitution, persistance, injected_vol, injected_count, shoot_vol, shoot_count, active_time, "
-                       "passive_time, last_update_hp) "
-                       "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                       "passive_time, last_update_hp, items, temp_sensitive, temp_use_time) "
+                       "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                        [data.id, data.name, data.sex.value, data.hp,
                         data.chest_size, data.length, data.length2, data.depth,
                         data.prostitution, data.persistance, data.injected_vol,
                         data.injected_count, data.shoot_vol, data.shoot_count,
-                        data.active_time, data.passive_time, data.last_update_hp])
+                        data.active_time, data.passive_time, data.last_update_hp,
+                        data.items_to_json_str(), data.temp_sensitive, data.temp_use_time])
         cursor.execute("INSERT OR REPLACE INTO body_info (id, race) VALUES (?, ?)",
                        [data.id, data.body_info.race.value.race_id])
 
@@ -128,6 +151,16 @@ class YinpaDB:
         self.update_user_info(data)
         return data
 
+    def delete_user(self, user_id: int):
+        cursor = self.conn.cursor()
+        cursor.execute("DELETE FROM body_parts_info WHERE id=?", [user_id])
+        cursor.execute("DELETE FROM body_info WHERE id=?", [user_id])
+        cursor.execute("DELETE FROM users WHERE id=?", [user_id])
+        rowcount = cursor.rowcount
+        self.conn.commit()
+        cursor.close()
+        return rowcount > 0
+
     def inject_others(self, self_user_id: int, action_type: int, target_user_id: int, target_part: int,
                       volume: float, spend_time: float, group_id=-1, is_serve=False):
         """
@@ -159,10 +192,3 @@ class YinpaDB:
             self.conn.commit()
         finally:
             cursor.close()
-
-# yinpadb = YinpaDB()
-# uinfo = yinpadb.get_user_info(2248589280)
-# print(uinfo)
-# yinpadb.create_user(2248589280, "sunset", models.BaseSex.SINGLE, models.RaceTypes.HUMAN)
-# yinpadb.create_user(1615694685, "chieri", models.BaseSex.SINGLE, models.RaceTypes.CAT)
-# yinpadb.inject_others(2248589280, 1615694685, models.BodyParts.OMANGO.value.body_id, 30.1, 123456)

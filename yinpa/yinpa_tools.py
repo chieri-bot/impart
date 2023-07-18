@@ -34,4 +34,4 @@ def sensitive_to_volume(sensitive: int, use_time: float):
             calc_sensitive += int(total_sensitive / for_count)
             break
     base_value = (calc_sensitive + use_time / 16) / 16
-    return random.randint(int(base_value / 2 * 100), int(base_value * 2 * 100)) / 100
+    return random.randint(int(base_value / 2 * 100), int(base_value * 2.5 * 100)) / 100

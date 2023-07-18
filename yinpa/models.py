@@ -1,9 +1,12 @@
+import json
+import random
 import time
 from copy import copy
 from pydantic import BaseModel
 import typing as t
 from enum import Enum
 from . import yinpa_error as err
+from .config import YinpaConfig as cfg
 
 
 class SignTypes(Enum):
@@ -73,21 +76,26 @@ class DoAction(BaseModel):
     is_base_type: bool
     base_strength_type: t.Optional[StrengthType] = StrengthType.NORMAL
     use_self_persistance: t.Optional[bool] = False  # A 对 B 使用动作时，True 以 A 的持久度做计算 (doi)；False 时则以 B 的持久度计算 (侍奉)
+    default_part: str
 
 class DoActionTypes(Enum):
-    STROKE = DoAction(id=0, names=["摸", "摸摸", "抚摸", "抚"], sensitive_addition=0.0, is_base_type=True)
-    RUB = DoAction(id=1, names=["撸", "揉", "揉搓"], sensitive_addition=10.0, is_base_type=True)
-    PINCH = DoAction(id=2, names=["捏", "捏捏", "揉捏"], sensitive_addition=15.0, is_base_type=True)
-    BEAT = DoAction(id=3, names=["拍", "拍打"], sensitive_addition=5.5, is_base_type=True)
-    LICK = DoAction(id=4, names=["舔", "舔舐"], sensitive_addition=20.0, is_base_type=True)
-    SUCK = DoAction(id=5, names=["吸", "嗦", "吸吮", "吮吸"], sensitive_addition=30.0, is_base_type=True)
+    STROKE = DoAction(id=0, names=["摸", "摸摸", "抚摸", "抚"], sensitive_addition=0.0, is_base_type=True, default_part="头")
+    RUB = DoAction(id=1, names=["撸", "揉搓", "揉"], sensitive_addition=10.0, is_base_type=True, default_part="头")
+    PINCH = DoAction(id=2, names=["捏", "捏捏"], sensitive_addition=15.0, is_base_type=True, default_part="脸")
+    BEAT = DoAction(id=3, names=["拍", "拍打"], sensitive_addition=5.5, is_base_type=True, default_part="屁股")
+    LICK = DoAction(id=4, names=["舔", "舔舐"], sensitive_addition=20.0, is_base_type=True, default_part="耳朵")
+    SUCK = DoAction(id=5, names=["吸", "嗦", "吸吮", "吮吸"], sensitive_addition=30.0, is_base_type=True, default_part="奇酷比")
 
-    DIG = DoAction(id=6, names=["抠"], sensitive_addition=50.0, is_base_type=False)
-    INSERT = DoAction(id=7, names=["透", "插", "草", "操", "日"], sensitive_addition=100.0, use_self_persistance=True, is_base_type=False)
+    DIG = DoAction(id=6, names=["抠"], sensitive_addition=50.0, is_base_type=False, default_part="小学")
+    INSERT = DoAction(id=7, names=["透", "插", "草", "操", "日"], sensitive_addition=100.0, use_self_persistance=True,
+                      is_base_type=False, default_part="[NOTSET]")
 
-    HIT = DoAction(id=8, names=["打", "击打", "打击"], sensitive_addition=5.5, is_base_type=True, base_strength_type=StrengthType.SEVERELY)
-    WHIP = DoAction(id=9, names=["鞭打", "抽打"], sensitive_addition=50.0, is_base_type=True, base_strength_type=StrengthType.SEVERELY)
-    CANDLE = DoAction(id=10, names=["滴蜡"], sensitive_addition=45.0, is_base_type=True, base_strength_type=StrengthType.SEVERELY)
+    HIT = DoAction(id=8, names=["打", "击打", "打击"], sensitive_addition=5.5, is_base_type=True, base_strength_type=StrengthType.SEVERELY,
+                   default_part="屁股")
+    WHIP = DoAction(id=9, names=["鞭打", "抽打"], sensitive_addition=50.0, is_base_type=True, base_strength_type=StrengthType.SEVERELY,
+                    default_part="屁股")
+    CANDLE = DoAction(id=10, names=["滴蜡"], sensitive_addition=45.0, is_base_type=True, base_strength_type=StrengthType.SEVERELY,
+                      default_part="屁股")
 
     @staticmethod
     def get_action_from_name(name: str):
@@ -95,6 +103,38 @@ class DoActionTypes(Enum):
             if name in i.value.names:
                 return i
         raise err.ActionNotFoundError(name)
+
+class ItemTargetTypes(Enum):
+    SELF = 0
+    TARGET = 1
+    BOTH = 2
+
+    def isSelf(self):
+        return self.value == self.SELF.value
+    def isTarget(self):
+        return self.value == self.TARGET.value
+    def isBoth(self):
+        return self.value == self.BOTH.value
+
+class ItemValue(BaseModel):
+    key: str
+    value: t.Union[int, float, bool]
+    is_set: bool  # 为 True 直接替换值，为 False 则在原基础上加减
+
+    def __init__(self, key, value, is_set):
+        super().__init__(key=key, value=value, is_set=is_set)
+
+class ItemInfo(BaseModel):
+    id: int
+    names: t.List[str]
+    desc: str
+    price: int  # 售价
+    target: ItemTargetTypes
+    effects: t.List[ItemValue]
+    need_sex: t.Optional[t.List[BaseSex]] = [BaseSex.SINGLE]
+    man_only: t.Optional[bool] = False  # 仅 SINGLE - 男可用
+    woman_only: t.Optional[bool] = False
+
 
 class BodyPartsInfo(CanReadOnlyBaseModel):
     body_id: int
@@ -144,20 +184,20 @@ class BodyParts(CEnum):
     NIPPLE = BodyPartsInfo(101, ["奇酷比", "乳头", "奶头", "乃头"], 600, can_shoot=True, read_only=True)  # if man - 300
     ABDOMEN = BodyPartsInfo(11, ["腹部", "腹", "肚子", "肚肚"], 100, read_only=True)
     BACK = BodyPartsInfo(12, ["背", "背部"], 80, read_only=True)
-    NEWNEW = BodyPartsInfo(13, ["牛牛", "牛子", "牛至"], 600, need_sex=[BaseSex.SINGLE, BaseSex.DOUBLE],
+    NEWNEW = BodyPartsInfo(13, ["牛牛", "牛子", "牛至", "滨州", "宾州", "宾周"], 600, need_sex=[BaseSex.SINGLE, BaseSex.DOUBLE],
                            need_length_sign=[SignTypes.positive], can_shoot=True, read_only=True)
-    NEWNEWHEAD = BodyPartsInfo(132, ["闺头", "鬼头", "龟头"], 800, need_sex=[BaseSex.SINGLE, BaseSex.DOUBLE],
+    NEWNEWHEAD = BodyPartsInfo(132, ["闺头", "鬼头", "龟头", "春袋"], 800, need_sex=[BaseSex.SINGLE, BaseSex.DOUBLE],
                                need_length_sign=[SignTypes.positive], can_shoot=True, read_only=True)
     NEWNEWEGG = BodyPartsInfo(133, ["高玩", "蛋蛋", "蛋", "睾丸", "搞完"], 500, need_sex=[BaseSex.SINGLE, BaseSex.DOUBLE],
                               need_length_sign=[SignTypes.positive], read_only=True)
-    OMANGO = BodyPartsInfo(131, ["小学", "欧芒果", "小穴"], 600, need_sex=[BaseSex.SINGLE, BaseSex.DOUBLE],
+    OMANGO = BodyPartsInfo(131, ["小学", "欧芒果", "小穴", "嗨", "芒果"], 600, need_sex=[BaseSex.SINGLE, BaseSex.DOUBLE],
                            need_length_sign=[SignTypes.negative], support_actions=[DoActionTypes.DIG, DoActionTypes.INSERT],
                            can_shoot=True, can_inject=True, read_only=True)
     OMANGOHAPPY = BodyPartsInfo(1311, ["欢乐豆", "小豆豆"], 850, need_sex=[BaseSex.SINGLE, BaseSex.DOUBLE],
                                 need_length_sign=[SignTypes.negative], support_actions=[DoActionTypes.DIG],
                                 can_shoot=True, can_inject=True, read_only=True)
     ASS = BodyPartsInfo(14, ["屁股", "臀", "臀部", "皮谷"], 500, can_shoot=True, can_inject=True, read_only=True)
-    ASSHOLE = BodyPartsInfo(141, ["皮炎", "屁眼", "肛门"], 550, support_actions=[DoActionTypes.DIG, DoActionTypes.INSERT],
+    ASSHOLE = BodyPartsInfo(141, ["后门", "皮炎", "屁眼", "肛门"], 550, support_actions=[DoActionTypes.DIG, DoActionTypes.INSERT],
                             can_shoot=True, can_inject=True, read_only=True)
     THIGH = BodyPartsInfo(15, ["大腿", "腿"], 100, read_only=True)
     SHANK = BodyPartsInfo(16, ["小腿"], 70, read_only=True)
@@ -349,6 +389,58 @@ class UserBodyInfo(BaseModel):
                     self.body_parts_info[i] = UserBodyPartsInfo.init_from_body_parts(i)
 
 
+class ItemTypes(Enum):
+    HP_RECOVERY = ItemInfo(id=0, names=["体力恢复", "体力回复", "体力恢复药水", "体力回复药水", "体力恢复药", "体力回复药"],
+                           desc="回满体力", need_sex=[BaseSex.NONE, BaseSex.SINGLE, BaseSex.DOUBLE],
+                           price=50, target=ItemTargetTypes.SELF, effects=[ItemValue("hp", cfg.max_hp, True)])
+    TO_MAN = ItemInfo(id=1, names=["变男", "变成男生", "男生药"],
+                      desc="变成男生 (仅单性别 - 女生可用, 长度变为 8 cm)", woman_only=True,
+                      price=500, target=ItemTargetTypes.SELF, effects=[ItemValue("length", 8.0, True)])
+    TO_WOMAN = ItemInfo(id=2, names=["变女", "变成女生", "女生药", "日本生可乐"],
+                        desc="变成女生 (仅单性别 - 男生可用, 深度变为 8 cm)", man_only=True,
+                        price=500, target=ItemTargetTypes.SELF, effects=[ItemValue("length", -8.0, True)])
+    LONGER = ItemInfo(id=3, names=["变长", "长度增加", "增长", "增长药"],
+                      desc="变长 (长度增加 5 cm)", need_sex=[BaseSex.SINGLE, BaseSex.DOUBLE], man_only=True,
+                      price=3000, target=ItemTargetTypes.SELF, effects=[ItemValue("length", 5.0, False)])
+    DEEPER = ItemInfo(id=4, names=["变深", "深度增加", "增深药"],
+                      desc="变深 (深度增加 5 cm)", need_sex=[BaseSex.SINGLE, BaseSex.DOUBLE], woman_only=True,
+                      price=3000, target=ItemTargetTypes.SELF, effects=[ItemValue("length", -5.0, False)])
+    LARGER = ItemInfo(id=5, names=["欧派增大", "丰胸", "丰胸药", "欧派变大"],
+                      desc="欧派变大 (单性别 - 女性 或 双性别 可用, 大小增加 2 cm)", need_sex=[BaseSex.SINGLE, BaseSex.DOUBLE], woman_only=True,
+                      price=1000, target=ItemTargetTypes.SELF, effects=[ItemValue("chest_size", 2, False)])
+    SMALLER = ItemInfo(id=6, names=["欧派变小", "欧派减小"],
+                       desc="欧派变小 (仅单性别 - 女性可用, 大小减少 2 cm)", need_sex=[BaseSex.SINGLE, BaseSex.DOUBLE], woman_only=True,
+                       price=1000, target=ItemTargetTypes.SELF, effects=[ItemValue("chest_size", -2, False)])
+
+    TIMEADD = ItemInfo(id=7, names=["持久药"],
+                       desc="临时增加自身持久: 1200 秒", need_sex=[BaseSex.NONE, BaseSex.SINGLE, BaseSex.DOUBLE],
+                       price=80, target=ItemTargetTypes.SELF, effects=[ItemValue("temp_use_time", 1800, False)])
+    SENSADD = ItemInfo(id=8, names=["催情药"],
+                       desc="临时增加对方敏感度: 8000", need_sex=[BaseSex.NONE, BaseSex.SINGLE, BaseSex.DOUBLE],
+                       price=80, target=ItemTargetTypes.TARGET, effects=[ItemValue("temp_sensitive", 8000, False)])
+
+    def __hash__(self):
+        return hash(self.value.id)
+
+    def __eq__(self, other: "ItemTypes"):
+        if not isinstance(other, ItemTypes):
+            return False
+        return self.value.id == other.value.id
+
+    @staticmethod
+    def get_item_from_id(item_id: int):
+        for i in ItemTypes:
+            if item_id == i.value.id:
+                return i
+        raise err.ItemNotFoundError(item_id)
+
+    @staticmethod
+    def get_item_from_name(name: str):
+        for i in ItemTypes:
+            if name in i.value.names:
+                return i
+        raise err.ItemNotFoundError(name)
+
 class UserInfo(BaseModel):
     id: int
     name: str
@@ -371,13 +463,37 @@ class UserInfo(BaseModel):
     active_time: float  # 主动时间
     passive_time: float  # 被动时间
 
+    items: t.Dict[ItemTypes, int]
+    temp_sensitive: t.Optional[float] = 0.0
+    temp_use_time: t.Optional[float] = 0.0
+
     def __init__(self, **data):
         get_sex = data.get("sex", None)
         if not isinstance(get_sex, BaseSex):
             data["sex"] = BaseSex.get_sex_from_value(get_sex)
 
+        new_items_dict = {}
+        get_items = data.get("items", {})
+        if isinstance(get_items, str):
+            get_items = json.loads(get_items)
+        for k in get_items:
+            if not isinstance(k, ItemTypes):
+                new_items_dict[ItemTypes.get_item_from_id(int(k))] = get_items[k]
+            else:
+                new_items_dict[k] = get_items[k]
+        data["items"] = new_items_dict
+
         super().__init__(**data)
         self.update_prostitution()
+
+    def items_to_dict(self):
+        ret = {}
+        for k in self.items:
+            ret[k.value.id] = self.items[k]
+        return ret
+
+    def items_to_json_str(self):
+        return json.dumps(self.items_to_dict())
 
     @staticmethod
     def check_value(v1, v2, sign: SignTypes):
@@ -413,8 +529,30 @@ class UserInfo(BaseModel):
                 return False
         return True
 
+    def use_item(self, item_info: ItemTypes):
+        """
+        注意：此方法不会检查物品数量，请在调用此方法前手动检查！
+        """
+        if self.sex not in item_info.value.need_sex:
+            raise err.YinpaUserError(f"用户: {self.name} 无法使用此道具。")
+        if self.sex.isSingle():
+            if item_info.value.man_only:
+                if self.length <= 0:
+                    raise err.YinpaUserError(f"用户: {self.name} 无法使用此道具。此道具为男性专用。")
+            elif item_info.value.woman_only:
+                if self.length >= 0:
+                    raise err.YinpaUserError(f"用户: {self.name} 无法使用此道具。此道具为女性专用。")
+        for i in item_info.value.effects:
+            if i.is_set:
+                set_value = i.value
+            else:
+                set_value = getattr(self, i.key) + i.value
+            setattr(self, i.key, set_value)
+        return item_info
+
     def update_prostitution(self):
-        value = (self.shoot_vol + self.injected_vol) * (self.injected_count + self.shoot_count) + self.active_time + self.passive_time
+        value = (self.shoot_vol + self.injected_vol) / 1000 * (self.injected_count + self.shoot_count) + \
+                (self.active_time + self.passive_time) / 60
         self.prostitution = value
         return value
 
@@ -422,6 +560,12 @@ class UserInfo(BaseModel):
         if key == "hp":
             self.last_update_hp = int(time.time())
         super().__setattr__(key, value)
+
+    def __getattribute__(self, item):
+        ret = super().__getattribute__(item)
+        if isinstance(ret, float):
+            return round(ret, 4)
+        return ret
 
     def to_dict(self):
         self.update_prostitution()
@@ -432,18 +576,20 @@ class UserInfo(BaseModel):
         for k in data["body_info"]["body_parts_info"]:
             new_body_parts_info[k.value.body_id] = data["body_info"]["body_parts_info"][k]
         data["body_info"]["body_parts_info"] = new_body_parts_info
+        data["items"] = self.items_to_dict()
         return data
 
     @staticmethod
     def get_init(user_id: int, name: str):
         values = {"id": user_id, "name": name, "sex": BaseSex.SINGLE, "hp": 1000, "chest_size": 1.0,
                   "length": 1, "length2": -1, "depth": 20, "last_update_hp": 0, "active_time": 0, "passive_time": 0,
-                  "prostitution": 0, "persistance": 300,
+                  "prostitution": 0, "persistance": random.randint(100, 600),
                   "body_info": {
                       "race": RaceTypes.HUMAN,
                       "body_parts_info": {}
                   }}
         return UserInfo(**values)
+
 
 class ReturnYinpaData(BaseModel):
     self_data: UserInfo
@@ -465,6 +611,7 @@ class ReturnDajiaoData(BaseModel):
     use_hp: int
     is_len2: bool
     is_opai: bool
+    add_sensitive: float
 
     def __init__(self, **data):
         super().__init__(**data)
@@ -483,18 +630,3 @@ class ReturnRollData(BaseModel):
     change_sex: bool
     body_part: BodyParts
     roll_value: float
-
-# import json
-# values = {"id": 1, "sex": 1, "hp": 100, "chest_size": 10.0, "length": 10, "length2": -10, "depth": 20, "prostitution": 200,
-#           "persistance": 250, "body_info": {
-#         "race": 0, "body_parts_info": {
-#             "0": {},
-#             "1": {},
-#         }
-#     }}
-# uinfo = UserInfo(**values)
-# print(json.dumps(uinfo.to_dict(), indent=4, ensure_ascii=False))
-
-# print("种族列表")
-# for n, i in enumerate(RaceTypes):
-#     print(f"[{i.value.race_id}] {i.value.name}")

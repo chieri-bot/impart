@@ -4,17 +4,32 @@ from . import models as m
 from . import database
 from . import yinpa_error as err
 from .config import YinpaConfig as cfg
+import typing as t
 
 db = database.YinpaDB()
 
 
 def add_user(user_id: int, user_name: str, sex: int, race: str):
+    uinfo = db.get_user_info(user_id, raise_notfound_error=False)
+    if uinfo is not None:
+        raise err.YinpaUserExistsError(f"用户 {user_id} 已存在")
+
+    user_name = user_name.strip()
+    if user_name in ["群主", "管理"]:
+        raise err.YinpaValueError("不允许使用关键字作为用户名")
+
     if len(user_name) > 15:
         raise err.YinpaUserError(f"名称过长，请保持在 15 字以内")
     return db.create_user(user_id, user_name, m.BaseSex.get_sex_from_value(sex), m.RaceTypes.get_race_type_from_name(race))
 
+def delete_user(user_id: int):
+    return db.delete_user(user_id)
+
 def get_user_info(user_id: int, raise_notfound_error=True):
     return db.get_user_info(user_id, raise_notfound_error=raise_notfound_error)
+
+def get_user_info_by_name(username: str, raise_notfound_error=True):
+    return db.get_user_info_from_name(username, raise_notfound_error=raise_notfound_error)
 
 def update_user_info(data: m.UserInfo):
     return db.update_user_info(data)
@@ -86,14 +101,17 @@ def yinpa(self_user_id: int, target_user_id: int, action_name: str, target_part_
 
     user_target_part_info.sensitive += cfg.add_sensitive_every_yinpa
     if do_action.value.use_self_persistance:  # 耗时计算
-        base_time = self_user_info.persistance
+        base_time = self_user_info.persistance + self_user_info.temp_use_time
+        self_user_info.temp_use_time = 0.0  # 清除临时道具效果
         left_hp_per = self_hp_left / cfg.max_hp
     else:
-        base_time = target_user_info.persistance
+        base_time = target_user_info.persistance + target_user_info.temp_use_time
+        target_user_info.temp_use_time = 0.0  # 清除临时道具效果
         left_hp_per = target_user_info.hp / cfg.max_hp
     use_time = random.randint(int(base_time * left_hp_per * 100), int(base_time * 100)) / 100  # 最终耗时
-    volume = yinpa_tools.sensitive_to_volume(total_sensitive, use_time)  # 量
-    reduce_target_hp = int(volume if volume <= cfg.max_hp / 2 else cfg.max_hp / 2)  # 目标减少体力
+    volume = yinpa_tools.sensitive_to_volume(total_sensitive + target_user_info.temp_sensitive, use_time)  # 量
+    target_user_info.temp_sensitive = 0.0  # 清除临时道具效果
+    reduce_target_hp = min(int(volume if volume <= cfg.max_hp / 2 else cfg.max_hp / 2), cfg.spend_hp_per_yinpa)  # 目标减少体力
     target_user_info.hp = int(target_user_info.hp - reduce_target_hp)
 
     db.update_user_info(self_user_info)
@@ -118,32 +136,38 @@ def dajiao(userid: int, body_part: m.BodyParts):
     is_len2 = False
     is_opai = False
 
+    add_dajiao = random.randint(cfg.dajiao_add_length * 100, cfg.dajiao_add_length * cfg.dajiao_max_magnification * 100) / 100
+    add_chest = random.randint(cfg.dajiao_add_chest_size * 100, cfg.dajiao_add_chest_size * cfg.dajiao_max_magnification * 100) / 100
+
     if body_part in [m.BodyParts.CHEST, m.BodyParts.NIPPLE]:
-        user_info.chest_size += cfg.dajiao_add_chest_size
-        change_value = cfg.dajiao_add_chest_size
+        user_info.chest_size += add_chest
+        change_value = add_chest
         action = m.DoActionTypes.PINCH
         is_opai = True
     elif body_part in [m.BodyParts.NEWNEW, m.BodyParts.NEWNEWHEAD]:
-        user_info.length += cfg.dajiao_add_length
-        change_value = cfg.dajiao_add_length
+        user_info.length += add_dajiao
+        change_value = add_dajiao
         action = m.DoActionTypes.RUB
     elif body_part in [m.BodyParts.OMANGO, m.BodyParts.OMANGOHAPPY]:
         action = m.DoActionTypes.DIG
         if user_info.sex.isDouble():
-            user_info.length2 -= cfg.dajiao_add_length
-            change_value = -cfg.dajiao_add_length
+            user_info.length2 -= add_dajiao
+            change_value = -add_dajiao
             is_len2 = True
         else:
-            user_info.length -= -cfg.dajiao_add_length
-            change_value = -cfg.dajiao_add_length
+            user_info.length -= add_dajiao
+            change_value = -add_dajiao
     else:
         raise err.YinpaValueError(f"body_part {body_part} not support in func: dajiao()")
 
+    add_sensitive = random.randint(int(cfg.dajiao_add_sensitive * 100),
+                                   int(cfg.dajiao_add_sensitive * cfg.dajiao_max_magnification * 100)) / 100
+    user_info.body_info.body_parts_info[body_part].sensitive += add_sensitive
     now_positive = user_info.length > 0  # 现在是否为正数
     db.update_user_info(user_info)
     return m.ReturnDajiaoData(user_info=user_info, orig_positive=orig_positive, now_positive=now_positive,
                               change_value=change_value, action=action, use_hp=need_hp, is_len2=is_len2,
-                              body_part=body_part, is_opai=is_opai)
+                              body_part=body_part, is_opai=is_opai, add_sensitive=add_sensitive)
 
 def snatch(self_user_id: int, target_user_id: int, is_newnew=False, is_opai=False):  # 抢夺
     self_user_info = get_user_info(self_user_id)
@@ -232,3 +256,59 @@ def opai_roll(userid: int):  # 加减大小
         user_info.chest_size = 0
     db.update_user_info(user_info)
     return m.ReturnRollData(user_info=user_info, change_sex=False, body_part=m.BodyParts.CHEST, roll_value=roll_value)
+
+
+def buy_item(userid: int, item_name: str, count=1, coin_use_callback: t.Optional[t.Callable[[int, int], bool]] = None,
+             coin_name: str = "CS点数"):
+    """
+    购买物品
+    :param userid: 用户id
+    :param item_name: 物品名称
+    :param count: 购买数量
+    :param coin_use_callback: 货币消耗回调函数。参数1: 用户id，参数2: 需要货币数, 返回值: 消耗成功返回 True，消耗失败返回 False。为 None 则不检查货币
+    :param coin_name: 货币名称。当抛出错误时，会使用此名称
+    :return:
+    """
+    user_info = get_user_info(userid)
+    item_info = m.ItemTypes.get_item_from_name(item_name)
+    if callable(coin_use_callback):
+        if not coin_use_callback(userid, item_info.value.price * count):
+            raise err.YinpaUserError(f"您的{coin_name}不足, 需要: {item_info.value.price}")
+    if item_info not in user_info.items:
+        user_info.items[item_info] = 0
+    user_info.items[item_info] += count
+    db.update_user_info(user_info)
+    return user_info, item_info
+
+
+def use_item(self_userid: int, target_userid: t.Optional[int], item_name: str, count=1):
+    user_info = get_user_info(self_userid)
+    if target_userid is not None:
+        target_userinfo = get_user_info(target_userid)
+    else:
+        target_userinfo = None
+    item_info = m.ItemTypes.get_item_from_name(item_name)
+    left_count = user_info.items.get(item_info, 0)
+    if left_count < count:
+        raise err.YinpaUserError(f"物品数量不足，当前数量: {left_count}")
+
+    user_info.items[item_info] -= count
+
+    for i in range(count):
+        if item_info.value.target.isSelf():
+            user_info.use_item(item_info)
+        elif item_info.value.target.isTarget():
+            if target_userinfo is None:
+                raise err.YinpaUserError(f"此物品只能给别人用哦~")
+            target_userinfo.use_item(item_info)
+        elif item_info.value.target.isBoth():
+            if target_userinfo is not None:
+                target_userinfo.use_item(item_info)
+            user_info.use_item(item_info)
+        else:
+            raise err.YinpaValueError("Invalid item target.")
+
+    db.update_user_info(user_info)
+    if target_userinfo is not None:
+        db.update_user_info(target_userinfo)
+    return user_info, target_userinfo, item_info
