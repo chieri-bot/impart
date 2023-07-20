@@ -225,4 +225,6 @@ if __name__ == "__main__":
 
     yinpa.image_generate.generate_help_img(rettext).save("C:/1234.png")
 
+    # yinpa.get_rank_img(2248)
+
     pass

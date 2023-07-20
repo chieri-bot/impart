@@ -3,8 +3,10 @@ from . import yinpa_tools
 from . import models as m
 from . import database
 from . import yinpa_error as err
+from . import image_generate
 from .config import YinpaConfig as cfg
 import typing as t
+import heapq
 
 db = database.YinpaDB()
 
@@ -20,19 +22,25 @@ def add_user(user_id: int, user_name: str, sex: int, race: str):
 
     if len(user_name) > 15:
         raise err.YinpaUserError(f"名称过长，请保持在 15 字以内")
-    return db.create_user(user_id, user_name, m.BaseSex.get_sex_from_value(sex), m.RaceTypes.get_race_type_from_name(race))
+    return db.create_user(user_id, user_name, m.BaseSex.get_sex_from_value(sex),
+                          m.RaceTypes.get_race_type_from_name(race))
+
 
 def delete_user(user_id: int):
     return db.delete_user(user_id)
 
+
 def get_user_info(user_id: int, raise_notfound_error=True):
     return db.get_user_info(user_id, raise_notfound_error=raise_notfound_error)
+
 
 def get_user_info_by_name(username: str, raise_notfound_error=True):
     return db.get_user_info_from_name(username, raise_notfound_error=raise_notfound_error)
 
+
 def update_user_info(data: m.UserInfo):
     return db.update_user_info(data)
+
 
 def yinpa(self_user_id: int, target_user_id: int, action_name: str, target_part_name: str,
           strength=m.StrengthType.NORMAL, group_id=-1):
@@ -111,7 +119,8 @@ def yinpa(self_user_id: int, target_user_id: int, action_name: str, target_part_
     use_time = random.randint(int(base_time * left_hp_per * 100), int(base_time * 100)) / 100  # 最终耗时
     volume = yinpa_tools.sensitive_to_volume(total_sensitive + target_user_info.temp_sensitive, use_time)  # 量
     target_user_info.temp_sensitive = 0.0  # 清除临时道具效果
-    reduce_target_hp = min(int(volume if volume <= cfg.max_hp / 2 else cfg.max_hp / 2), cfg.spend_hp_per_yinpa)  # 目标减少体力
+    reduce_target_hp = min(int(volume if volume <= cfg.max_hp / 2 else cfg.max_hp / 2),
+                           cfg.spend_hp_per_yinpa)  # 目标减少体力
     target_user_info.hp = int(target_user_info.hp - reduce_target_hp)
 
     db.update_user_info(self_user_info)
@@ -136,8 +145,10 @@ def dajiao(userid: int, body_part: m.BodyParts):
     is_len2 = False
     is_opai = False
 
-    add_dajiao = random.randint(cfg.dajiao_add_length * 100, cfg.dajiao_add_length * cfg.dajiao_max_magnification * 100) / 100
-    add_chest = random.randint(cfg.dajiao_add_chest_size * 100, cfg.dajiao_add_chest_size * cfg.dajiao_max_magnification * 100) / 100
+    add_dajiao = random.randint(cfg.dajiao_add_length * 100,
+                                cfg.dajiao_add_length * cfg.dajiao_max_magnification * 100) / 100
+    add_chest = random.randint(cfg.dajiao_add_chest_size * 100,
+                               cfg.dajiao_add_chest_size * cfg.dajiao_max_magnification * 100) / 100
 
     if body_part in [m.BodyParts.CHEST, m.BodyParts.NIPPLE]:
         user_info.chest_size += add_chest
@@ -168,6 +179,7 @@ def dajiao(userid: int, body_part: m.BodyParts):
     return m.ReturnDajiaoData(user_info=user_info, orig_positive=orig_positive, now_positive=now_positive,
                               change_value=change_value, action=action, use_hp=need_hp, is_len2=is_len2,
                               body_part=body_part, is_opai=is_opai, add_sensitive=add_sensitive)
+
 
 def snatch(self_user_id: int, target_user_id: int, is_newnew=False, is_opai=False):  # 抢夺
     self_user_info = get_user_info(self_user_id)
@@ -212,6 +224,7 @@ def snatch(self_user_id: int, target_user_id: int, is_newnew=False, is_opai=Fals
 
     return m.ReturnSnatchData(self_data=self_user_info, target_data=target_user_info, self_add=self_add,
                               target_change_sex=target_change_sex, body_part=body_part, snatch_len=snatch_len)
+
 
 def newnew_roll(userid: int, is_omago=False):  # 加减大小
     user_info = get_user_info(userid)
@@ -273,7 +286,7 @@ def buy_item(userid: int, item_name: str, count=1, coin_use_callback: t.Optional
     item_info = m.ItemTypes.get_item_from_name(item_name)
     if callable(coin_use_callback):
         if not coin_use_callback(userid, item_info.value.price * count):
-            raise err.YinpaUserError(f"您的{coin_name}不足, 需要: {item_info.value.price}")
+            raise err.YinpaUserError(f"您的{coin_name}不足, 需要: {item_info.value.price * count}")
     if item_info not in user_info.items:
         user_info.items[item_info] = 0
     user_info.items[item_info] += count
@@ -312,3 +325,138 @@ def use_item(self_userid: int, target_userid: t.Optional[int], item_name: str, c
     if target_userinfo is not None:
         db.update_user_info(target_userinfo)
     return user_info, target_userinfo, item_info
+
+
+def get_target_rank(lst, target, key: t.Callable, reverse=False):
+    count = 0
+    for i in lst:
+        if (key(i) > key(target)) if not reverse else (key(i) < key(target)):
+            count += 1
+    return count + 1
+
+
+def get_rank_img(userid: int, count_limit=40, limit_users: t.Optional[t.List[int]] = None):
+    users_all = db.get_all_users(with_body_parts_info=False)
+    users = []
+    if limit_users:
+        for i in users_all:
+            if i.id in limit_users:
+                users.append(i)
+    else:
+        users = users_all
+
+    chest_users = []
+    length_users = []
+    depth_users = []
+    for i in users:
+        if i.sex.isSingle():
+            if i.length < 0:
+                depth_users.append(i)
+            else:  # 单 - 男, chest_users 不加
+                length_users.append(i)
+                continue
+        chest_users.append(i)
+
+    target_user = get_user_info(userid, raise_notfound_error=False)
+
+    target_length_rank = 0
+    target_depth_rank = 0
+    target_chest_rank = 0
+    target_prostitution_rank = 0  # yl
+    target_persistance_rank = 0  # 耐力
+    taregt_injected_vol_rank = 0
+    taregt_injected_count_rank = 0
+    taregt_shoot_count_rank = 0
+    taregt_active_time_rank = 0
+    taregt_passive_time_rank = 0
+    taregt_shoot_vol_rank = 0
+
+    if target_user:
+        if target_user.sex.isSingle():
+            if target_user.length < 0:
+                target_depth_rank = get_target_rank(depth_users, target_user, lambda u: u.length, reverse=True)
+                target_chest_rank = get_target_rank(chest_users, target_user, lambda u: u.chest_size)
+            else:
+                target_length_rank = get_target_rank(length_users, target_user, lambda u: u.length)
+        target_prostitution_rank = get_target_rank(users, target_user, lambda u: u.prostitution)
+        target_persistance_rank = get_target_rank(users, target_user, lambda u: u.persistance)
+        taregt_injected_vol_rank = get_target_rank(users, target_user, lambda u: u.injected_vol)
+        taregt_injected_count_rank = get_target_rank(users, target_user, lambda u: u.injected_count)
+        taregt_shoot_count_rank = get_target_rank(users, target_user, lambda u: u.shoot_count)
+        taregt_passive_time_rank = get_target_rank(users, target_user, lambda u: u.passive_time)
+        taregt_shoot_vol_rank = get_target_rank(users, target_user, lambda u: u.shoot_vol)
+
+    length_rank = heapq.nlargest(int(count_limit / 2), length_users, key=lambda u: u.length)
+    length_rank_r = heapq.nsmallest(int(count_limit / 2), length_users, key=lambda u: u.length)
+    depth_rank = heapq.nsmallest(int(count_limit / 2), depth_users, key=lambda u: u.length)
+    depthrank_r = heapq.nlargest(int(count_limit / 2), depth_users, key=lambda u: u.length)
+    persistance_rank = heapq.nlargest(int(count_limit / 2), users, key=lambda u: u.persistance)  # 耐力
+    persistance_rank_r = heapq.nsmallest(int(count_limit / 2), users, key=lambda u: u.persistance)  # 耐力, 倒
+    prostitution_rank = heapq.nlargest(count_limit, users, key=lambda u: u.prostitution)  # yl
+    chest_size_rank = heapq.nlargest(int(count_limit / 2), chest_users, key=lambda u: u.chest_size)
+    chest_size_rank_r = heapq.nsmallest(int(count_limit / 2), chest_users, key=lambda u: u.chest_size)
+
+    injected_vol_rank = heapq.nlargest(count_limit, users, key=lambda u: u.injected_vol)
+    injected_count_rank = heapq.nlargest(count_limit, users, key=lambda u: u.injected_count)
+    shoot_count_rank = heapq.nlargest(count_limit, users, key=lambda u: u.shoot_count)
+    shoot_vol_rank = heapq.nlargest(count_limit, users, key=lambda u: u.shoot_vol)
+    active_time_rank = heapq.nlargest(count_limit, users, key=lambda u: u.active_time)
+    passive_time_rank = heapq.nlargest(count_limit, users, key=lambda u: u.passive_time)
+
+    length_rank_r.reverse()
+    depthrank_r.reverse()
+    persistance_rank_r.reverse()
+    chest_size_rank_r.reverse()
+
+    table_w = 400
+
+    len_tbl = image_generate.generate_rank_table(length_rank, lambda u: u.length, len(length_users),
+                                                 end_part=length_rank_r,
+                                                 title="长度排行", item_name="长度 (cm)", target_userinfo=target_user,
+                                                 target_user_rank=target_length_rank, table_w=table_w)
+    depth_tbl = image_generate.generate_rank_table(depth_rank, lambda u: u.length, len(depth_users),
+                                                   end_part=depthrank_r,
+                                                   title="深度排行", item_name="深度 (cm)", target_userinfo=target_user,
+                                                   target_user_rank=target_depth_rank, table_w=table_w)
+    persistance_tbl = image_generate.generate_rank_table(persistance_rank, lambda u: u.persistance, len(users),
+                                                         end_part=persistance_rank_r, title="持久排行", item_name="持久 (s)",
+                                                         target_userinfo=target_user, target_user_rank=target_persistance_rank, table_w=table_w)
+    chest_tbl = image_generate.generate_rank_table(chest_size_rank,
+                                                   lambda u: f"{u.chest_size} ({yinpa_tools.chest_size_to_cup(u.chest_size)})",
+                                                   len(chest_users), end_part=chest_size_rank_r,
+                                                   title="欧派排行", item_name="大小", target_userinfo=target_user,
+                                                   target_user_rank=target_chest_rank, table_w=table_w)
+
+    injected_vol_tbl = image_generate.generate_rank_table(injected_vol_rank, lambda u: u.injected_vol, len(users),
+                                                          end_part=None, title="被注入量排行", item_name="被注入量 (ml)",
+                                                          target_userinfo=target_user, target_user_rank=taregt_injected_vol_rank,
+                                                          table_w=table_w)
+    shoot_vol_tbl = image_generate.generate_rank_table(shoot_vol_rank, lambda u: u.shoot_vol, len(users),
+                                                          end_part=None, title="发射量排行", item_name="发射量 (ml)",
+                                                          target_userinfo=target_user, target_user_rank=taregt_shoot_vol_rank,
+                                                          table_w=table_w)
+    injected_count_tbl = image_generate.generate_rank_table(injected_count_rank, lambda u: u.injected_count, len(users),
+                                                          end_part=None, title="被透次数排行", item_name="被透次数",
+                                                          target_userinfo=target_user, target_user_rank=taregt_injected_count_rank,
+                                                          table_w=table_w)
+    shoot_count_tbl = image_generate.generate_rank_table(shoot_count_rank, lambda u: u.shoot_count, len(users),
+                                                          end_part=None, title="透人次数排行", item_name="透人次数",
+                                                          target_userinfo=target_user, target_user_rank=taregt_shoot_count_rank,
+                                                          table_w=table_w)
+    active_time_tbl = image_generate.generate_rank_table(active_time_rank, lambda u: u.active_time, len(users),
+                                                          end_part=None, title="透人总时长排行", item_name="透人时长 (s)",
+                                                          target_userinfo=target_user, target_user_rank=taregt_active_time_rank,
+                                                          table_w=table_w)
+    passive_time_tbl = image_generate.generate_rank_table(passive_time_rank, lambda u: u.passive_time, len(users),
+                                                          end_part=None, title="被透总时长排行", item_name="被透时长 (s)",
+                                                          target_userinfo=target_user, target_user_rank=taregt_passive_time_rank,
+                                                          table_w=table_w)
+
+    prostitution_tbl = image_generate.generate_rank_table(prostitution_rank, lambda u: u.prostitution, len(users),
+                                                          end_part=None, title="引乱排行", item_name="引乱度",
+                                                          target_userinfo=target_user, target_user_rank=target_prostitution_rank,
+                                                          table_w=table_w)
+
+    return image_generate.merge_rank_table_image([len_tbl, depth_tbl, persistance_tbl, chest_tbl, injected_vol_tbl,
+                                                  shoot_vol_tbl, injected_count_tbl, shoot_count_tbl, active_time_tbl,
+                                                  passive_time_tbl, prostitution_tbl])

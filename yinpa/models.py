@@ -97,6 +97,9 @@ class DoActionTypes(Enum):
     CANDLE = DoAction(id=10, names=["滴蜡"], sensitive_addition=45.0, is_base_type=True, base_strength_type=StrengthType.SEVERELY,
                       default_part="屁股")
 
+    PULL = DoAction(id=11, names=["扯", "拉", "拉扯"], sensitive_addition=20.0, is_base_type=True, default_part="奇酷比")
+
+
     @staticmethod
     def get_action_from_name(name: str):
         for i in DoActionTypes:
@@ -406,11 +409,11 @@ class ItemTypes(Enum):
                       desc="变深 (深度增加 5 cm)", need_sex=[BaseSex.SINGLE, BaseSex.DOUBLE], woman_only=True,
                       price=3000, target=ItemTargetTypes.SELF, effects=[ItemValue("length", -5.0, False)])
     LARGER = ItemInfo(id=5, names=["欧派增大", "丰胸", "丰胸药", "欧派变大"],
-                      desc="欧派变大 (单性别 - 女性 或 双性别 可用, 大小增加 2 cm)", need_sex=[BaseSex.SINGLE, BaseSex.DOUBLE], woman_only=True,
-                      price=1000, target=ItemTargetTypes.SELF, effects=[ItemValue("chest_size", 2, False)])
+                      desc="欧派变大 (单性别 - 女性 或 双性别 可用, 大小增加 5 cm)", need_sex=[BaseSex.SINGLE, BaseSex.DOUBLE], woman_only=True,
+                      price=1000, target=ItemTargetTypes.SELF, effects=[ItemValue("chest_size", 5, False)])
     SMALLER = ItemInfo(id=6, names=["欧派变小", "欧派减小"],
-                       desc="欧派变小 (仅单性别 - 女性可用, 大小减少 2 cm)", need_sex=[BaseSex.SINGLE, BaseSex.DOUBLE], woman_only=True,
-                       price=1000, target=ItemTargetTypes.SELF, effects=[ItemValue("chest_size", -2, False)])
+                       desc="欧派变小 (仅单性别 - 女性可用, 大小减少 5 cm)", need_sex=[BaseSex.SINGLE, BaseSex.DOUBLE], woman_only=True,
+                       price=1000, target=ItemTargetTypes.SELF, effects=[ItemValue("chest_size", -5, False)])
 
     TIMEADD = ItemInfo(id=7, names=["持久药"],
                        desc="临时增加自身持久: 1200 秒", need_sex=[BaseSex.NONE, BaseSex.SINGLE, BaseSex.DOUBLE],
@@ -566,6 +569,11 @@ class UserInfo(BaseModel):
         if isinstance(ret, float):
             return round(ret, 4)
         return ret
+
+    def __eq__(self, other):
+        if not isinstance(other, UserInfo):
+            return False
+        return self.id == other.id
 
     def to_dict(self):
         self.update_prostitution()

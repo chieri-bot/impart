@@ -79,6 +79,43 @@ class YinpaDB:
             raise err.UserNotFoundError("获取随机对象失败")
         return self.get_user_info(query[0])
 
+    def get_all_users(self, with_body_parts_info=True):
+        """
+        获取所有用户信息
+        :param with_body_parts_info: 获取 body_parts_info。设置为 False 可以极大提高获取速度, 但是没有 body_info.body_parts_info
+        """
+        cursor = self.conn.cursor()
+        cursor.row_factory = sqlite3.Row
+
+        query_users = cursor.execute("SELECT * FROM users").fetchall()
+        query_body_info = [dict(i) for i in cursor.execute("SELECT * FROM body_info",).fetchall()]
+        query_body_parts_info = [dict(i) for i in cursor.execute("SELECT * FROM body_parts_info").fetchall()] \
+            if with_body_parts_info else []
+        cursor.close()
+
+        ret = []
+        for query_user in query_users:
+            user_info_dict = dict(query_user)
+            user_id = user_info_dict["id"]
+
+            del_index = -1
+            for n, body_info in enumerate(query_body_info):
+                if body_info["id"] == user_id:
+                    user_info_dict["body_info"] = body_info
+                    del_index = n
+                    break
+            if del_index >= 0:
+                del query_body_info[del_index]
+
+            if "body_parts_info" not in user_info_dict["body_info"]:
+                user_info_dict["body_info"]["body_parts_info"] = {}
+
+            for n, i in enumerate(query_body_parts_info):
+                if i["id"] == user_id:
+                    user_info_dict["body_info"]["body_parts_info"][i["body_id"]] = i
+            ret.append(models.UserInfo(**user_info_dict))
+        return ret
+
     def update_user_info(self, data: models.UserInfo):
         data.update_prostitution()
         cursor = self.conn.cursor()

@@ -2,7 +2,7 @@ from . import models as m
 from PIL import Image, ImageOps, ImageFont, ImageDraw
 from io import BytesIO
 import os
-from typing import List, Any, Union, Tuple
+from typing import List, Any, Union, Tuple, Optional, Callable
 from .config import YinpaConfig as cfg
 from . import yinpa_tools
 
@@ -177,3 +177,54 @@ def generate_help_img(desc_text: str):
     paste_image(pt, text_img, int((im_w - text_img.width) / 2), 0)
     paste_image(pt, table_img, int((im_w - table_img.width) / 2), text_img.height)
     return pt
+
+
+def generate_rank_table(head_part: List[m.UserInfo], key: Callable[[m.UserInfo], Any], total_count: int,
+                        end_part: Optional[List[m.UserInfo]] = None, title: Optional[str] = None, item_name="数值",
+                        target_userinfo: Optional[m.UserInfo] = None, target_user_rank=-1, table_w=300):
+    table_data = [["排名", "昵称", item_name]]
+    for n, i in enumerate(head_part):
+        table_data.append([n + 1, i.name, key(i)])
+
+    if end_part:
+        table_data.append(["...", "...", "..."])
+        if target_userinfo:
+            if target_userinfo not in head_part:
+                if target_userinfo not in end_part:
+                    if target_user_rank > 0:
+                        table_data.append([target_user_rank, target_userinfo.name, key(target_userinfo)])
+                        table_data.append(["...", "...", "..."])
+        end_len = len(end_part)
+        for n, i in enumerate(end_part):
+            table_data.append([total_count - end_len + n + 1, i.name, key(i)])
+    else:
+        if target_userinfo:
+            if target_userinfo not in head_part:
+                table_data.append(["...", "...", "..."])
+                table_data.append([target_user_rank, target_userinfo.name, key(target_userinfo)])
+    return draw_table(table_data, table_w, 30 * len(table_data), (255, 255, 255, 255), font_stze=12, table_title=title)
+
+
+def merge_rank_table_image(ims: List[Image.Image], count_per_line=3, spacing=20):
+    rows = len(ims) // count_per_line
+    if len(ims) % count_per_line != 0:
+        rows += 1
+
+    max_width = max(im.size[0] for im in ims)
+    max_height = max(im.size[1] for im in ims)
+
+    table_width = max_width * count_per_line + spacing * (count_per_line - 1)
+    table_height = max_height * rows + spacing * (rows - 1)
+
+    table_image = Image.new('RGB', (table_width, table_height), (255, 255, 255))
+
+    for i, im in enumerate(ims):
+        row = i // count_per_line
+        col = i % count_per_line
+
+        x = col * (max_width + spacing)
+        y = row * (max_height + spacing)
+
+        table_image.paste(im, (x, y))
+
+    return table_image
