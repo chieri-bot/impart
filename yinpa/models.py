@@ -487,6 +487,8 @@ class UserInfo(BaseModel):
         data["items"] = new_items_dict
 
         super().__init__(**data)
+        if self.chest_size < 0:
+            self.chest_size = 0.0
         self.update_prostitution()
 
     def items_to_dict(self):
@@ -562,6 +564,9 @@ class UserInfo(BaseModel):
     def __setattr__(self, key, value):
         if key == "hp":
             self.last_update_hp = int(time.time())
+        elif key == "chest_size":
+            if value < 0:
+                value = 0
         super().__setattr__(key, value)
 
     def __getattribute__(self, item):

@@ -207,6 +207,8 @@ def snatch(self_user_id: int, target_user_id: int, is_newnew=False, is_opai=Fals
     elif is_opai:
         if (target_user_info.length > 0) and (not target_user_info.sex.isNone()):
             raise err.YinpaUserError(f"用户: {target_user_info.name} 没有这个部位。")
+        if target_user_info.chest_size <= 0:
+            raise err.YinpaUserError(f"用户: {target_user_info.name} 的欧派没有多余的部分可以抢了。")
         body_part = m.BodyParts.CHEST
         snatch_len = random.randint(int(cfg.snatch_opai_length_base * 100),
                                     int(cfg.snatch_opai_length_base * cfg.snatch_opai_max_magnification * 100)) / 100
@@ -218,6 +220,11 @@ def snatch(self_user_id: int, target_user_id: int, is_newnew=False, is_opai=Fals
             self_add = True
     else:
         raise err.YinpaValueError("snatch() - Invalid parameter.")
+
+    if self_user_info.chest_size < 0:
+        self_user_info.chest_size = 0
+    if target_user_info.chest_size < 0:
+        target_user_info.chest_size = 0
 
     db.update_user_info(self_user_info)
     db.update_user_info(target_user_info)

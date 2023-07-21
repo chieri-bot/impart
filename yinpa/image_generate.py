@@ -2,7 +2,7 @@ from . import models as m
 from PIL import Image, ImageOps, ImageFont, ImageDraw
 from io import BytesIO
 import os
-from typing import List, Any, Union, Tuple, Optional, Callable
+from typing import List, Any, Union, Tuple, Optional, Callable, Dict
 from .config import YinpaConfig as cfg
 from . import yinpa_tools
 
@@ -18,7 +18,9 @@ def mask_img(img: Image.Image, mask_path: str, size=None) -> Image.Image:
     return img
 
 def draw_table(data: List[List[Any]], table_width=600, table_height=300, bg_color: Union[str, Tuple] = "white",
-               font_stze=12, table_title: str = None):
+               font_stze=12, table_title: str = None, draw_colors: Optional[Dict[int, Any]] = None):
+    if draw_colors is None:
+        draw_colors = {}
     cell_width = table_width / len(data[0])
     cell_height = table_height / (len(data) + (1 if table_title else 0))
     if table_title:
@@ -34,13 +36,16 @@ def draw_table(data: List[List[Any]], table_width=600, table_height=300, bg_colo
     for i, row in enumerate(data):
         if (i == 0) and table_title:
             draw.rectangle((0, 0, table_width - 1, cell_height), outline='black')
-            draw.text((table_width / 2, cell_height / 2), str(table_title), fill='black', font=font, anchor='mm')
+            title_font = ImageFont.truetype('msyh.ttc', size=font_stze + 1)
+            draw.text((table_width / 2, cell_height / 2), str(table_title), fill='black', font=title_font, anchor='mm')
             continue
+
+        fill = draw_colors.get(i + (1 if table_title else 0), "black")
         for j, cell in enumerate(row):
             x = j * cell_width
             y = i * cell_height
             draw.rectangle((x, y, x + cell_width - 1, y + cell_height - 1), outline='black')
-            draw.text((x + cell_width / 2, y + cell_height / 2), str(cell), fill='black', font=font, anchor='mm')
+            draw.text((x + cell_width / 2, y + cell_height / 2), str(cell), fill=fill, font=font, anchor='mm')
     return image
 
 def paste_image(pt, im, x, y, w=-1, h=-1, with_mask=True):
@@ -156,7 +161,7 @@ def generate_userinfo(user_info: m.UserInfo, avatar: bytes = None):
 
 
 def generate_help_img(desc_text: str):
-    text_img = text_to_img(desc_text, bg_color=(255, 255, 255, 0), line_spacing=1.1)
+    text_img = text_to_img(desc_text, bg_color=(255, 255, 255, 0), line_spacing=1.2)
 
     item_data = [["名称", "描述", "使用对象", "价格"]]
     for i in m.ItemTypes:
@@ -181,10 +186,11 @@ def generate_help_img(desc_text: str):
 
 def generate_rank_table(head_part: List[m.UserInfo], key: Callable[[m.UserInfo], Any], total_count: int,
                         end_part: Optional[List[m.UserInfo]] = None, title: Optional[str] = None, item_name="数值",
-                        target_userinfo: Optional[m.UserInfo] = None, target_user_rank=-1, table_w=300):
+                        target_userinfo: Optional[m.UserInfo] = None, target_user_rank=-1, table_w=350):
     table_data = [["排名", "昵称", item_name]]
     for n, i in enumerate(head_part):
         table_data.append([n + 1, i.name, key(i)])
+    target_data_index = -1
 
     if end_part:
         table_data.append(["...", "...", "..."])
@@ -192,17 +198,27 @@ def generate_rank_table(head_part: List[m.UserInfo], key: Callable[[m.UserInfo],
             if target_userinfo not in head_part:
                 if target_userinfo not in end_part:
                     if target_user_rank > 0:
+                        target_data_index = len(table_data) + 2
                         table_data.append([target_user_rank, target_userinfo.name, key(target_userinfo)])
                         table_data.append(["...", "...", "..."])
+            else:
+                target_data_index = head_part.index(target_userinfo) + 3
         end_len = len(end_part)
         for n, i in enumerate(end_part):
+            if i.id == target_userinfo.id:
+                target_data_index = len(table_data) + 2
             table_data.append([total_count - end_len + n + 1, i.name, key(i)])
     else:
         if target_userinfo:
             if target_userinfo not in head_part:
                 table_data.append(["...", "...", "..."])
-                table_data.append([target_user_rank, target_userinfo.name, key(target_userinfo)])
-    return draw_table(table_data, table_w, 30 * len(table_data), (255, 255, 255, 255), font_stze=12, table_title=title)
+                if target_user_rank > 0:
+                    target_data_index = len(table_data) + 2
+                    table_data.append([target_user_rank, target_userinfo.name, key(target_userinfo)])
+            else:
+                target_data_index = head_part.index(target_userinfo) + 3
+    return draw_table(table_data, table_w, 30 * len(table_data), (255, 255, 255, 255), font_stze=13, table_title=title,
+                      draw_colors={target_data_index: "red"})
 
 
 def merge_rank_table_image(ims: List[Image.Image], count_per_line=3, spacing=20):
