@@ -615,15 +615,16 @@ class UserInfo(BaseModel):
         if dress not in self.own_dress:
             raise err.YinpaUserError(f"您的背包没有 {dress.value.item_names[0]}")
 
-        remove_worn_dress = []
+        remove_worn_dress = set()
         for i in self.worn_dress:
             for d in dress.value.body_parts:
                 if d in i.value.body_parts:
-                    remove_worn_dress.append(i)
+                    remove_worn_dress.add(i)
         for i in remove_worn_dress:
             self.worn_dress.remove(i)
         self.worn_dress.append(dress)
         return remove_worn_dress
+
 
     def get_worn_dress_by_part(self, body_part: BodyParts) -> DressTypes:
         for i in self.worn_dress:

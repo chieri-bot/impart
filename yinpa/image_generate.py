@@ -130,7 +130,7 @@ def generate_userinfo(user_info: m.UserInfo, avatar: bytes = None):
     font = ImageFont.truetype('msyh.ttc', size=23)
     text_w, text_h = calc_text_size(info_str, font, 1.2)
 
-    items = [["物品名", "数量/是否装备"]]
+    items = [["物品名", "数量"]]
     for i in user_info.items:
         _count = user_info.items[i]
         if _count > 0:

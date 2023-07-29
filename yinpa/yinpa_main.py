@@ -298,6 +298,10 @@ def buy_dress(userid: int, dress_name: str, coin_use_callback: t.Optional[t.Call
     db.update_user_info(user_info)
     return user_info, dress_info
 
+def check_worn_dress(userid: int, dress_name: str):
+    user_info = get_user_info(userid)
+    dress_info = m.DressTypes.get_dress_from_name(dress_name)
+    return dress_info in user_info.worn_dress
 
 def wear_dress(userid: int, dress_name: str):
     user_info = get_user_info(userid)
@@ -307,6 +311,15 @@ def wear_dress(userid: int, dress_name: str):
     rm_dress = user_info.add_dress(dress_info)
     db.update_user_info(user_info)
     return user_info, dress_info, rm_dress
+
+def take_off_dress(userid: int, dress_name: str):
+    user_info = get_user_info(userid)
+    dress_info = m.DressTypes.get_dress_from_name(dress_name)
+    if dress_info not in user_info.worn_dress:
+        raise err.YinpaUserError(f"您没有穿戴 {dress_name}")
+    user_info.worn_dress.remove(dress_info)
+    db.update_user_info(user_info)
+    return user_info, dress_info
 
 
 def buy_item(userid: int, item_name: str, count=1, coin_use_callback: t.Optional[t.Callable[[int, int], bool]] = None,
