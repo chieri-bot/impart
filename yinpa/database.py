@@ -13,7 +13,63 @@ spath = os.path.split(__file__)[0]
 
 class YinpaDB:
     def __init__(self):
+        if not os.path.isdir(f"{spath}/data"):
+            os.makedirs(f"{spath}/data")
         self.conn = sqlite3.connect(f"{spath}/data/yinpa_userinfo.db", check_same_thread=False)
+        self.init_db()
+
+    def init_db(self):
+        cursor = self.conn.cursor()
+        cursor.execute("""CREATE TABLE IF NOT EXISTS "users" (
+  "id" INTEGER NOT NULL,
+  "name" TEXT NOT NULL,
+  "sex" INTEGER NOT NULL,
+  "hp" INTEGER NOT NULL,
+  "chest_size" REAL NOT NULL,
+  "length" REAL NOT NULL,
+  "length2" REAL NOT NULL,
+  "depth" REAL NOT NULL,
+  "prostitution" REAL NOT NULL,
+  "persistance" REAL NOT NULL,
+  "injected_vol" REAL NOT NULL,
+  "injected_count" REAL NOT NULL,
+  "shoot_vol" REAL NOT NULL,
+  "shoot_count" integer NOT NULL,
+  "active_time" REAL NOT NULL,
+  "passive_time" REAL NOT NULL,
+  "last_update_hp" integer NOT NULL DEFAULT 0,
+  "items" TEXT NOT NULL DEFAULT "{}",
+  "temp_sensitive" real NOT NULL,
+  "temp_use_time" real NOT NULL, worn_dress TEXT DEFAULT '[]', own_dress TEXT DEFAULT '[]',
+  PRIMARY KEY ("id")
+)""")
+        cursor.execute("""CREATE TABLE IF NOT EXISTS "body_info" (
+    id INTEGER PRIMARY KEY,
+    race INTEGER,
+    FOREIGN KEY (id) REFERENCES users (id)
+)""")
+        cursor.execute("""CREATE TABLE IF NOT EXISTS "body_parts_info" (
+  "id" INTEGER,
+  "body_id" INTEGER,
+  "base_sensitive" INTEGER,
+  "sensitive" INTEGER,
+  "stroke_soft_sensitive" INTEGER,
+  "stroke_normal_sensitive" INTEGER,
+  "stroke_severely_sensitive" INTEGER,
+  FOREIGN KEY ("id") REFERENCES "users" ("id") ON DELETE NO ACTION ON UPDATE NO ACTION
+)""")
+        cursor.execute("""CREATE TABLE IF NOT EXISTS "yinpa_log"
+(
+    user_id          INTEGER,
+    action_type      integer,
+    target_id        INTEGER,
+    target_body_part integer,
+    group_id         INTEGER,
+    inject_volume    REAL,
+    timestamp        integer
+)""")
+        self.conn.commit()
+        cursor.close()
 
     def update_hp(self, userid):
         cursor = self.conn.cursor()
@@ -122,14 +178,15 @@ class YinpaDB:
 
         cursor.execute("INSERT OR REPLACE INTO users (id, name, sex, hp, chest_size, length, length2, depth, "
                        "prostitution, persistance, injected_vol, injected_count, shoot_vol, shoot_count, active_time, "
-                       "passive_time, last_update_hp, items, temp_sensitive, temp_use_time) "
-                       "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                       "passive_time, last_update_hp, items, temp_sensitive, temp_use_time, worn_dress, own_dress) "
+                       "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                        [data.id, data.name, data.sex.value, data.hp,
                         data.chest_size, data.length, data.length2, data.depth,
                         data.prostitution, data.persistance, data.injected_vol,
                         data.injected_count, data.shoot_vol, data.shoot_count,
                         data.active_time, data.passive_time, data.last_update_hp,
-                        data.items_to_json_str(), data.temp_sensitive, data.temp_use_time])
+                        data.items_to_json_str(), data.temp_sensitive, data.temp_use_time,
+                        data.worn_dress_item_to_json_str(), data.own_dress_item_to_json_str()])
         cursor.execute("INSERT OR REPLACE INTO body_info (id, race) VALUES (?, ?)",
                        [data.id, data.body_info.race.value.race_id])
 

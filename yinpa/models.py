@@ -77,28 +77,37 @@ class DoAction(BaseModel):
     base_strength_type: t.Optional[StrengthType] = StrengthType.NORMAL
     use_self_persistance: t.Optional[bool] = False  # A 对 B 使用动作时，True 以 A 的持久度做计算 (doi)；False 时则以 B 的持久度计算 (侍奉)
     default_part: str
+    self_part: str
 
 class DoActionTypes(Enum):
-    STROKE = DoAction(id=0, names=["摸", "摸摸", "抚摸", "抚"], sensitive_addition=0.0, is_base_type=True, default_part="头")
-    RUB = DoAction(id=1, names=["撸", "揉搓", "揉"], sensitive_addition=10.0, is_base_type=True, default_part="头")
-    PINCH = DoAction(id=2, names=["捏", "捏捏"], sensitive_addition=15.0, is_base_type=True, default_part="脸")
-    BEAT = DoAction(id=3, names=["拍", "拍打"], sensitive_addition=5.5, is_base_type=True, default_part="屁股")
-    LICK = DoAction(id=4, names=["舔", "舔舐"], sensitive_addition=20.0, is_base_type=True, default_part="耳朵")
-    SUCK = DoAction(id=5, names=["吸", "嗦", "吸吮", "吮吸"], sensitive_addition=30.0, is_base_type=True, default_part="奇酷比")
+    STROKE = DoAction(id=0, names=["摸", "摸摸", "抚摸", "抚"], sensitive_addition=0.0, is_base_type=True, default_part="头",
+                      self_part="手")
+    RUB = DoAction(id=1, names=["撸", "揉搓", "揉"], sensitive_addition=10.0, is_base_type=True, default_part="头",
+                   self_part="手")
+    PINCH = DoAction(id=2, names=["捏", "捏捏"], sensitive_addition=15.0, is_base_type=True, default_part="脸",
+                     self_part="手")
+    BEAT = DoAction(id=3, names=["拍", "拍打"], sensitive_addition=5.5, is_base_type=True, default_part="屁股",
+                    self_part="手")
+    LICK = DoAction(id=4, names=["舔", "舔舐"], sensitive_addition=20.0, is_base_type=True, default_part="耳朵",
+                    self_part="嘴巴")
+    SUCK = DoAction(id=5, names=["吸", "嗦", "吸吮", "吮吸"], sensitive_addition=30.0, is_base_type=True, default_part="奇酷比",
+                    self_part="嘴巴")
 
-    DIG = DoAction(id=6, names=["抠"], sensitive_addition=50.0, is_base_type=False, default_part="小学")
+    DIG = DoAction(id=6, names=["抠"], sensitive_addition=50.0, is_base_type=False, default_part="小学", self_part="手")
     INSERT = DoAction(id=7, names=["透", "插", "草", "操", "日"], sensitive_addition=100.0, use_self_persistance=True,
-                      is_base_type=False, default_part="[NOTSET]")
+                      is_base_type=False, default_part="牛牛", self_part="牛牛")
 
     HIT = DoAction(id=8, names=["打", "击打", "打击"], sensitive_addition=5.5, is_base_type=True, base_strength_type=StrengthType.SEVERELY,
-                   default_part="屁股")
+                   default_part="屁股", self_part="手")
     WHIP = DoAction(id=9, names=["鞭打", "抽打"], sensitive_addition=50.0, is_base_type=True, base_strength_type=StrengthType.SEVERELY,
-                    default_part="屁股")
+                    default_part="屁股", self_part="手")
     CANDLE = DoAction(id=10, names=["滴蜡"], sensitive_addition=45.0, is_base_type=True, base_strength_type=StrengthType.SEVERELY,
-                      default_part="屁股")
+                      default_part="屁股", self_part="手")
 
-    PULL = DoAction(id=11, names=["扯", "拉", "拉扯"], sensitive_addition=20.0, is_base_type=True, default_part="奇酷比")
-
+    PULL = DoAction(id=11, names=["扯", "拉", "拉扯"], sensitive_addition=20.0, is_base_type=True, default_part="奇酷比",
+                    self_part="手")
+    STEPON = DoAction(id=12, names=["踩", "脚踩"], sensitive_addition=15.0, is_base_type=True, default_part="脸",
+                      self_part="脚")
 
     @staticmethod
     def get_action_from_name(name: str):
@@ -336,6 +345,84 @@ class RaceTypes(Enum):
         raise err.RaceNotFoundError(name)
 
 
+class DressInfo(BaseModel):
+    item_id: int
+    item_names: t.List[str]
+    description: str
+    price: int
+    body_parts: t.List[BodyParts]
+    add_sensitive: t.Optional[int] = 0
+    add_time: t.Optional[float] = 0.0  # 直接作用于秒数
+    desc_word: t.Optional[str] = "穿着"
+    dress_desc_func: t.Optional[t.Callable[[BodyParts], str]] = None
+    can_buy: t.Optional[bool] = True
+
+    def __init__(self, item_id: int, item_names: t.Union[t.List[str], str], desc: str, body_parts: t.List[BodyParts],
+                 price: int, add_time=None, **data):
+        add_time = price if add_time is None else add_time
+        if isinstance(item_names, str):
+            item_names = [item_names]
+        super().__init__(item_id=item_id, item_names=item_names, description=desc, body_parts=body_parts, price=price,
+                         add_time=add_time, **data)
+
+    def default_dress_desc(self, target_body_part: BodyParts):
+        return f"{self.desc_word}{self.item_names[0]}" if target_body_part in self.body_parts else ""
+
+class DressTypes(Enum):
+    NONE = DressInfo(-1, "无（穿戴）", "不可穿戴、不可装备的物品", [], 0, can_buy=False)
+    # 默认装备，不做提示
+    CAT_EARS = DressInfo(0, "猫耳", "猫耳装饰", [BodyParts.HEAD], 10, desc_word="戴着")
+    GLASSES = DressInfo(1, "眼镜", "普通的眼镜", [BodyParts.EYES], 10, desc_word="戴着")
+    MOUSEBALL = DressInfo(2, "口球", "普通的口球", [BodyParts.MOUSE], 30, desc_word="戴着")
+    NECKLACE = DressInfo(3, "项圈", "普通的项圈", [BodyParts.NECK], 40, desc_word="戴着")
+
+    # 手套部分，打胶、摸别人、被摸手时生效
+    GLOVE = DressInfo(4, "手套", "普通的手套", [BodyParts.HANDS], 10, desc_word="戴着")
+    GLOVE_W = DressInfo(41, "白色蕾丝手套", "白色蕾丝手套", [BodyParts.HANDS], 50, desc_word="戴着")
+    GLOVE_B = DressInfo(42, "黑色蕾丝手套", "黑色蕾丝手套", [BodyParts.HANDS], 50, desc_word="戴着")
+    GLOVE_F = DressInfo(43, "肉色蕾丝手套", "肉色蕾丝手套", [BodyParts.HANDS], 50, desc_word="戴着")
+    GLOVE_LW = DressInfo(44, "长袖白色蕾丝手套", "长袖白色蕾丝手套", [BodyParts.HANDS], 70, desc_word="戴着")
+    GLOVE_LB = DressInfo(45, "长袖黑色蕾丝手套", "长袖黑色蕾丝手套", [BodyParts.HANDS], 70, desc_word="戴着")
+    GLOVE_LF = DressInfo(46, "长袖肉色蕾丝手套", "长袖肉色蕾丝手套", [BodyParts.HANDS], 70, desc_word="戴着")
+
+    # 被摸、透生效
+    UNDERWEAR = DressInfo(5, "qq内衣", "qq内衣一套，样式可自由想象", [BodyParts.CHEST, BodyParts.ASS, BodyParts.NEWNEW, BodyParts.OMANGO], 120, add_sensitive=100)
+
+    # 被摸、透，主动踩生效
+    SOCKS_W = DressInfo(6, ["白丝", "白色丝袜"], "白丝", [BodyParts.FOOT, BodyParts.THIGH, BodyParts.SHANK], 200, add_sensitive=100, add_time=60)
+    SOCKS_B = DressInfo(61, ["黑丝", "黑色丝袜"], "黑丝", [BodyParts.FOOT, BodyParts.THIGH, BodyParts.SHANK], 200, add_sensitive=100, add_time=60)
+    SOCKS_F = DressInfo(62, ["肉丝", "肉色丝袜"], "肉丝", [BodyParts.FOOT, BodyParts.THIGH, BodyParts.SHANK], 200, add_sensitive=100, add_time=60)
+
+
+    def get_action_dress_desc(self, target_body_part: BodyParts):
+        if self.value.dress_desc_func is None:
+            return self.value.default_dress_desc(target_body_part)
+        else:
+            return self.value.dress_desc_func(target_body_part)
+
+    @staticmethod
+    def get_dress_from_id(item_id: int):
+        for i in DressTypes:
+            if i.value.item_id == item_id:
+                return i
+        raise err.ItemNotFoundError(item_id)
+
+    @staticmethod
+    def get_dress_from_name(item_name: str):
+        for i in DressTypes:
+            if item_name in i.value.item_names:
+                return i
+        raise err.ItemNotFoundError(item_name)
+
+    def __eq__(self, other):
+        if not isinstance(other, DressTypes):
+            return False
+        return self.value.item_id == other.value.item_id
+
+    def __hash__(self):
+        return hash(self.value.item_id)
+
+
 class UserBodyPartsInfo(BaseModel):
     body_id: int
     base_sensitive: int
@@ -343,6 +430,9 @@ class UserBodyPartsInfo(BaseModel):
     stroke_soft_sensitive: t.Optional[int] = 0  # 轻轻地摸
     stroke_normal_sensitive: t.Optional[int] = 0  # 摸
     stroke_severely_sensitive: t.Optional[int] = 0  # 狠狠地摸
+
+    def __init__(self, **data):
+        super().__init__(**data)
 
     def get_sensitive(self):
         return self.sensitive + self.base_sensitive
@@ -444,6 +534,7 @@ class ItemTypes(Enum):
                 return i
         raise err.ItemNotFoundError(name)
 
+
 class UserInfo(BaseModel):
     id: int
     name: str
@@ -456,6 +547,8 @@ class UserInfo(BaseModel):
     prostitution: float  # yl度
     persistance: float  # 持久度
     body_info: UserBodyInfo
+    worn_dress: t.Optional[t.List[DressTypes]] = []  # 穿戴服饰
+    own_dress: t.Optional[t.List[DressTypes]] = []  # 拥有服饰
 
     injected_vol: t.Optional[float] = 0.0
     injected_count: t.Optional[int] = 0
@@ -486,6 +579,18 @@ class UserInfo(BaseModel):
                 new_items_dict[k] = get_items[k]
         data["items"] = new_items_dict
 
+        worn_dress = json.loads(data.get("worn_dress", "[]"))
+        new_dress_list = []
+        for i in worn_dress:
+                new_dress_list.append(i if isinstance(i, DressTypes) else DressTypes.get_dress_from_id(i))
+        data["worn_dress"] = new_dress_list
+
+        own_dress = json.loads(data.get("own_dress", "[]"))
+        new_own_dress_list = []
+        for i in own_dress:
+                new_own_dress_list.append(i if isinstance(i, DressTypes) else DressTypes.get_dress_from_id(i))
+        data["own_dress"] = new_own_dress_list
+
         super().__init__(**data)
         if self.chest_size < 0:
             self.chest_size = 0.0
@@ -499,6 +604,32 @@ class UserInfo(BaseModel):
 
     def items_to_json_str(self):
         return json.dumps(self.items_to_dict())
+
+    def own_dress_item_to_json_str(self):
+        return json.dumps([i.value.item_id for i in self.own_dress])
+
+    def worn_dress_item_to_json_str(self):
+        return json.dumps([i.value.item_id for i in self.worn_dress])
+
+    def add_dress(self, dress: DressTypes):
+        if dress not in self.own_dress:
+            raise err.YinpaUserError(f"您的背包没有 {dress.value.item_names[0]}")
+
+        remove_worn_dress = []
+        for i in self.worn_dress:
+            for d in dress.value.body_parts:
+                if d in i.value.body_parts:
+                    remove_worn_dress.append(i)
+        for i in remove_worn_dress:
+            self.worn_dress.remove(i)
+        self.worn_dress.append(dress)
+        return remove_worn_dress
+
+    def get_worn_dress_by_part(self, body_part: BodyParts) -> DressTypes:
+        for i in self.worn_dress:
+            if body_part in i.value.body_parts:
+                return i
+        return DressTypes.NONE
 
     @staticmethod
     def check_value(v1, v2, sign: SignTypes):
@@ -590,6 +721,7 @@ class UserInfo(BaseModel):
             new_body_parts_info[k.value.body_id] = data["body_info"]["body_parts_info"][k]
         data["body_info"]["body_parts_info"] = new_body_parts_info
         data["items"] = self.items_to_dict()
+        data["worn_dress"] = [i.value.item_id for i in self.worn_dress]
         return data
 
     @staticmethod
@@ -613,6 +745,8 @@ class ReturnYinpaData(BaseModel):
     reduce_length: float  # 透支扣除长度
     use_time: float
     is_serve: bool
+    self_wear: DressTypes
+    target_wear: DressTypes
 
 class ReturnDajiaoData(BaseModel):
     user_info: UserInfo

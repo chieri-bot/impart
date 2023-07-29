@@ -85,6 +85,9 @@ def yinpa(self_user_id: int, target_user_id: int, action_name: str, target_part_
     do_action = m.DoActionTypes.get_action_from_name(action_name)
     target_part = m.BodyParts.get_pars_from_name(target_part_name)
 
+    self_wear = self_user_info.get_worn_dress_by_part(m.BodyParts.get_pars_from_name(do_action.value.self_part))
+    target_wear = target_user_info.get_worn_dress_by_part(target_part)
+
     if not target_user_info.check_have_body_part(target_part):
         raise err.YinpaUserError(f"{target_user_info.name} 没有 {target_part_name} 这个部位哦\nヽ(。>д<)ｐ")
     if not target_part.value.check_support_action(do_action):
@@ -94,7 +97,8 @@ def yinpa(self_user_id: int, target_user_id: int, action_name: str, target_part_
     if strength == m.StrengthType.NORMAL:
         strength = do_action.value.base_strength_type
 
-    total_sensitive = user_target_part_info.get_sensitive()  # 敏感度计算结果
+    total_sensitive = user_target_part_info.get_sensitive() + \
+                      self_wear.value.add_sensitive + target_wear.value.add_sensitive  # 敏感度计算结果
     if strength == m.StrengthType.SOFT:
         total_sensitive += user_target_part_info.stroke_soft_sensitive
         user_target_part_info.stroke_soft_sensitive += cfg.add_strength_sensitive_every_yinpa
@@ -116,7 +120,8 @@ def yinpa(self_user_id: int, target_user_id: int, action_name: str, target_part_
         base_time = target_user_info.persistance + target_user_info.temp_use_time
         target_user_info.temp_use_time = 0.0  # 清除临时道具效果
         left_hp_per = target_user_info.hp / cfg.max_hp
-    use_time = random.randint(int(base_time * left_hp_per * 100), int(base_time * 100)) / 100  # 最终耗时
+    base_time += self_wear.value.add_time + target_wear.value.add_time
+    use_time = random.randint(int(base_time * left_hp_per * 100), int(base_time * 150)) / 100  # 最终耗时
     volume = yinpa_tools.sensitive_to_volume(total_sensitive + target_user_info.temp_sensitive, use_time)  # 量
     target_user_info.temp_sensitive = 0.0  # 清除临时道具效果
     reduce_target_hp = min(int(volume if volume <= cfg.max_hp / 2 else cfg.max_hp / 2),
@@ -130,7 +135,8 @@ def yinpa(self_user_id: int, target_user_id: int, action_name: str, target_part_
 
     return m.ReturnYinpaData(self_data=self_user_info, target_data=target_user_info, is_overdraft=is_overdraft,
                              volume=volume, reduce_target_hp=reduce_target_hp, reduce_length=reduce_length,
-                             is_serve=not do_action.value.use_self_persistance, use_time=use_time)
+                             is_serve=not do_action.value.use_self_persistance, use_time=use_time, self_wear=self_wear,
+                             target_wear=target_wear)
 
 
 def dajiao(userid: int, body_part: m.BodyParts):
@@ -276,6 +282,31 @@ def opai_roll(userid: int):  # 加减大小
         user_info.chest_size = 0
     db.update_user_info(user_info)
     return m.ReturnRollData(user_info=user_info, change_sex=False, body_part=m.BodyParts.CHEST, roll_value=roll_value)
+
+def buy_dress(userid: int, dress_name: str, coin_use_callback: t.Optional[t.Callable[[int, int], bool]] = None,
+             coin_name: str = "CS点数"):
+    user_info = get_user_info(userid)
+    dress_info = m.DressTypes.get_dress_from_name(dress_name)
+    if not dress_info.value.can_buy:
+        raise err.YinpaError(f"该物品不可购买")
+    if dress_info in user_info.own_dress:
+        raise err.YinpaUserError(f"您已拥有 {dress_name}")
+    if callable(coin_use_callback):
+        if not coin_use_callback(userid, dress_info.value.price):
+            raise err.YinpaUserError(f"您的{coin_name}不足, 需要: {dress_info.value.price}")
+    user_info.own_dress.append(dress_info)
+    db.update_user_info(user_info)
+    return user_info, dress_info
+
+
+def wear_dress(userid: int, dress_name: str):
+    user_info = get_user_info(userid)
+    dress_info = m.DressTypes.get_dress_from_name(dress_name)
+    if dress_info not in user_info.own_dress:
+        raise err.YinpaUserError(f"您的背包内没有 {dress_name}")
+    rm_dress = user_info.add_dress(dress_info)
+    db.update_user_info(user_info)
+    return user_info, dress_info, rm_dress
 
 
 def buy_item(userid: int, item_name: str, count=1, coin_use_callback: t.Optional[t.Callable[[int, int], bool]] = None,

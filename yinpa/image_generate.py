@@ -130,11 +130,13 @@ def generate_userinfo(user_info: m.UserInfo, avatar: bytes = None):
     font = ImageFont.truetype('msyh.ttc', size=23)
     text_w, text_h = calc_text_size(info_str, font, 1.2)
 
-    items = [["物品名", "数量"]]
+    items = [["物品名", "数量/是否装备"]]
     for i in user_info.items:
         _count = user_info.items[i]
         if _count > 0:
             items.append([i.value.names[0], _count])
+    for i in user_info.own_dress:
+        items.append([i.value.item_names[0], f"1 ({'已装备' if i in user_info.worn_dress else '未装备'})"])
 
     item_img = img_prop_resize(draw_table(items, 300, 40 * len(items), font_stze=25), width=260)
     body_info_img = generate_body_info_table(user_info)
@@ -174,6 +176,10 @@ def generate_help_img(desc_text: str):
         else:
             ts = "未知"
         item_data.append([", ".join(i.value.names[:4]), i.value.desc, ts, i.value.price])
+    for i in m.DressTypes:
+        if i.value.can_buy:
+            item_data.append([i.value.item_names[0], i.value.description, "自己", i.value.price])
+
     table_img = draw_table(item_data, 1300, 30 * len(item_data), (255, 255, 255, 0), 12, "物品列表")
 
     im_w = max(text_img.width, table_img.width) + 15

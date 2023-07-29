@@ -7,7 +7,7 @@ class YinpaConfig:
     min_hp = -1000  # 最低体力要求
 
     add_sensitive_every_yinpa = 0.02  # 每次增加的
-    add_strength_sensitive_every_yinpa = 0.005  # 目标力度每次增加的
+    add_strength_sensitive_every_yinpa = 2  # 目标力度每次增加的
     red_persistance_overdraft = 1.5  # 透支时扣除的持久力
     red_length_overdraft = 0.1  # 透支时扣除的长度
 
